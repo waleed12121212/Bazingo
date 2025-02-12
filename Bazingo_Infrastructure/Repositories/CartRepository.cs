@@ -1,61 +1,144 @@
-﻿using Bazingo.Infrastructure.Data;
+using Bazingo_Core.Entities.Shopping;
 using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Bazingo_Infrastructure.Repositories
 {
-    public class CartRepository : ICartRepository
+    public class CartRepository : BaseRepository<CartEntity>, ICartRepository
     {
         private readonly ApplicationDbContext _context;
+        private readonly DbSet<CartEntity> _cartSet;
+        private readonly DbSet<CartItemEntity> _cartItemSet;
 
-        public CartRepository(ApplicationDbContext context)
+        public CartRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
+            _cartSet = context.Set<CartEntity>();
+            _cartItemSet = context.Set<CartItemEntity>();
         }
 
-        public async Task<IEnumerable<ShoppingCartItem>> GetCartItemsByUserIdAsync(string userId)
+        public async Task<CartEntity> GetCartByUserIdAsync(string userId)
         {
-            return await _context.ShoppingCartItems.Where(c => c.BuyerID == userId).ToListAsync();
+            return await _cartSet
+                .FirstOrDefaultAsync(c => c.UserId == userId && !c.IsDeleted);
         }
 
-        public async Task AddCartItemAsync(ShoppingCartItem cartItem)
+        public async Task<CartEntity> GetCartWithItemsAsync(string userId)
         {
-            await _context.ShoppingCartItems.AddAsync(cartItem);
-            await _context.SaveChangesAsync();
-        }
+            var cart = await _cartSet
+                .Include(c => c.Items)
+                    .ThenInclude(i => i.Product)
+                .FirstOrDefaultAsync(c => c.UserId == userId && !c.IsDeleted);
 
-        public async Task UpdateCartItemQuantityAsync(int cartItemId , int quantity)
-        {
-            var cartItem = await _context.ShoppingCartItems.FindAsync(cartItemId);
-            if (cartItem != null)
+            if (cart == null)
             {
-                cartItem.Quantity = quantity;
-                _context.ShoppingCartItems.Update(cartItem);
+                cart = new CartEntity
+                {
+                    UserId = userId,
+                    LastUpdated = DateTime.UtcNow
+                };
+                await _cartSet.AddAsync(cart);
                 await _context.SaveChangesAsync();
+            }
+
+            return cart;
+        }
+
+        public async Task<CartEntity> AddAsync(CartEntity cart)
+        {
+            await _cartSet.AddAsync(cart);
+            await _context.SaveChangesAsync();
+            return cart;
+        }
+
+        public async Task<CartItemEntity> GetCartItemAsync(int cartItemId)
+        {
+            return await _cartItemSet
+                .Include(ci => ci.Product)
+                .FirstOrDefaultAsync(ci => ci.Id == cartItemId && !ci.IsDeleted);
+        }
+
+        public async Task<IEnumerable<CartItemEntity>> GetCartItemsAsync(string userId)
+        {
+            var cart = await GetCartByUserIdAsync(userId);
+            if (cart == null) return new List<CartItemEntity>();
+
+            return await _cartItemSet
+                .Include(ci => ci.Product)
+                .Where(ci => ci.CartId == cart.Id && !ci.IsDeleted)
+                .ToListAsync();
+        }
+
+        public async Task<CartItemEntity> AddCartItemAsync(CartItemEntity cartItem)
+        {
+            await _cartItemSet.AddAsync(cartItem);
+            await _context.SaveChangesAsync();
+            return cartItem;
+        }
+
+        public async Task<bool> UpdateCartItemAsync(CartItemEntity cartItem)
+        {
+            try
+            {
+                _cartItemSet.Update(cartItem);
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
-        public async Task RemoveCartItemAsync(int cartItemId)
+        public async Task<bool> RemoveCartItemAsync(int cartItemId)
         {
-            var cartItem = await _context.ShoppingCartItems.FindAsync(cartItemId);
-            if (cartItem != null)
+            try
             {
-                _context.ShoppingCartItems.Remove(cartItem);
-                await _context.SaveChangesAsync();
+                var cartItem = await _cartItemSet.FindAsync(cartItemId);
+                if (cartItem != null)
+                {
+                    cartItem.IsDeleted = true;
+                    _cartItemSet.Update(cartItem);
+                    await _context.SaveChangesAsync();
+                    return true;
+                }
+                return false;
+            }
+            catch (Exception)
+            {
+                return false;
             }
         }
 
-        public async Task ClearCartAsync(string userId)
+        public async Task<bool> ClearCartAsync(string userId)
         {
-            var cartItems = await _context.ShoppingCartItems.Where(c => c.BuyerID == userId).ToListAsync();
-            _context.ShoppingCartItems.RemoveRange(cartItems);
-            await _context.SaveChangesAsync();
+            try
+            {
+                var cart = await GetCartByUserIdAsync(userId);
+                if (cart != null)
+                {
+                    var cartItems = await _cartItemSet
+                        .Where(ci => ci.CartId == cart.Id && !ci.IsDeleted)
+                        .ToListAsync();
+
+                    foreach (var item in cartItems)
+                    {
+                        item.IsDeleted = true;
+                    }
+
+                    await _context.SaveChangesAsync();
+                    return true;
+                }
+                return false;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
         }
     }
 }

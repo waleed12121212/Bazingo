@@ -1,61 +1,107 @@
-﻿using Bazingo.Infrastructure.Data;
+using Bazingo_Core.Entities;
 using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Bazingo_Core.Entities.Shopping;
+using Bazingo_Core.Entities.Product;
 
 namespace Bazingo_Infrastructure.Repositories
 {
-    public class ComplaintRepository : IComplaintRepository
+    public class ComplaintRepository : BaseRepository<Complaint>, IComplaintRepository
     {
         private readonly ApplicationDbContext _context;
 
-        public ComplaintRepository(ApplicationDbContext context)
+        public ComplaintRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
         }
 
-        public async Task<Complaint> GetComplaintByIdAsync(int complaintId)
+        public async Task<Complaint> GetComplaintByIdAsync(int id)
         {
-            return await _context.Complaints.FindAsync(complaintId);
+            return await _dbSet
+                .Include(c => c.User)
+                .Include(c => c.Order)
+                .Include(c => c.Product)
+                .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
         }
 
-        public async Task<IEnumerable<Complaint>> GetAllComplaintsAsync( )
+        public async Task<IReadOnlyList<Complaint>> GetComplaintsByOrderAsync(int orderId)
         {
-            return await _context.Complaints.ToListAsync();
+            var complaints = await _dbSet
+                .Include(c => c.User)
+                .Include(c => c.Product)
+                .Where(c => c.OrderId == orderId && !c.IsDeleted)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+            return complaints.AsReadOnly();
         }
 
-        public async Task<IEnumerable<Complaint>> GetComplaintsByUserIdAsync(string userId)
+        public async Task<IReadOnlyList<Complaint>> GetComplaintsByUserAsync(string userId)
         {
-            return await _context.Complaints.Where(c => c.UserID == userId).ToListAsync();
+            var complaints = await _dbSet
+                .Include(c => c.Order)
+                .Include(c => c.Product)
+                .Where(c => c.UserId == userId && !c.IsDeleted)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+            return complaints.AsReadOnly();
         }
 
-        public async Task AddComplaintAsync(Complaint complaint)
+        public async Task<IReadOnlyList<Complaint>> GetComplaintsByProductAsync(int productId)
         {
-            await _context.Complaints.AddAsync(complaint);
+            var complaints = await _dbSet
+                .Include(c => c.User)
+                .Include(c => c.Order)
+                .Where(c => c.ProductId == productId && !c.IsDeleted)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+            return complaints.AsReadOnly();
+        }
+
+        Task<IReadOnlyList<Complaint>> IComplaintRepository.GetComplaintsByStatusAsync(Bazingo_Core.Enums.ComplaintStatus status)
+        {
+            return _dbSet
+                .Include(c => c.User)
+                .Include(c => c.Order)
+                .Include(c => c.Product)
+                .Where(c => c.Status == (Bazingo_Core.Entities.ComplaintStatus)status && !c.IsDeleted)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync()
+                .ContinueWith(t => (IReadOnlyList<Complaint>)t.Result.AsReadOnly());
+        }
+
+        public async Task<Complaint> AddComplaintAsync(Complaint complaint)
+        {
+            complaint.CreatedAt = DateTime.UtcNow;
+            complaint.Status = (Bazingo_Core.Entities.ComplaintStatus)Bazingo_Core.Enums.ComplaintStatus.Pending;
+            await AddAsync(complaint);
             await _context.SaveChangesAsync();
+            return complaint;
         }
 
-        public async Task UpdateComplaintStatusAsync(int complaintId , string status)
+        public async Task<IReadOnlyList<Complaint>> GetComplaintsByUserIdAsync(string userId)
         {
-            var complaint = await GetComplaintByIdAsync(complaintId);
-            if (complaint != null)
+            var complaints = await _dbSet
+                .Include(c => c.Order)
+                .Include(c => c.Product)
+                .Where(c => c.UserId == userId && !c.IsDeleted)
+                .OrderByDescending(c => c.CreatedAt)
+                .ToListAsync();
+            return complaints.AsReadOnly();
+        }
+
+        public async Task UpdateComplaintStatusAsync(int id , string status)
+        {
+            var complaint = await GetByIdAsync(id);
+            if (complaint != null && Enum.TryParse<Bazingo_Core.Enums.ComplaintStatus>(status , true , out Bazingo_Core.Enums.ComplaintStatus complaintStatus))
             {
-                if (Enum.TryParse(status , out ComplaintStatus complaintStatus))
-                {
-                    complaint.Status = complaintStatus;
-                    _context.Complaints.Update(complaint);
-                    await _context.SaveChangesAsync();
-                }
-                else
-                {
-                    // التعامل مع الحالة عندما لا يمكن تحويل السلسلة إلى قيمة من نوع ComplaintStatus
-                    throw new ArgumentException("Invalid status value.");
-                }
+                complaint.Status = (Bazingo_Core.Entities.ComplaintStatus)complaintStatus;
+                complaint.LastUpdated = DateTime.UtcNow;
+                await _context.SaveChangesAsync();
             }
         }
     }

@@ -1,57 +1,111 @@
-﻿using Bazingo_Application.DTOs.Carts;
-using Bazingo_Application.Services;
-using Bazingo_Core.Models;
-using Microsoft.AspNetCore.Http;
+using Bazingo_Application.DTOs.Cart;
+using Bazingo_Application.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
+using System.Net;
 
 namespace Bazingo_API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class CartController : ControllerBase
     {
-        private readonly CartService _cartService;
+        private readonly ICartService _cartService;
 
-        public CartController(CartService cartService)
+        public CartController(ICartService cartService)
         {
             _cartService = cartService;
         }
 
-        [HttpPost("add")]
-        public async Task<IActionResult> AddToCart([FromBody] ShoppingCartItemCreateDTO cartItemDTO)
+        /// <summary>
+        /// Get the current user's shopping cart
+        /// </summary>
+        /// <returns>The user's cart with all items</returns>
+        /// <response code="200">Returns the user's cart</response>
+        /// <response code="401">If the user is not authenticated</response>
+        [HttpGet]
+        [ProducesResponseType(typeof(CartDto), (int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.Unauthorized)]
+        public async Task<ActionResult<CartDto>> GetCart()
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            var cartItem = new ShoppingCartItem
-            {
-                BuyerID = cartItemDTO.BuyerID ,
-                ProductID = cartItemDTO.ProductID ,
-                Quantity = cartItemDTO.Quantity
-            };
-
-            await _cartService.AddCartItemAsync(cartItem);
-            return Ok(new { message = "Item added to cart successfully." });
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var cart = await _cartService.GetUserCartAsync(userId);
+            return Ok(cart);
         }
 
-        [HttpGet("user/{userId}")]
-        public async Task<IActionResult> GetCartItems(string userId)
+        /// <summary>
+        /// Add an item to the shopping cart
+        /// </summary>
+        /// <param name="addToCartDto">The item to add</param>
+        /// <returns>The updated cart</returns>
+        /// <response code="200">Returns the updated cart</response>
+        /// <response code="400">If the request is invalid</response>
+        /// <response code="401">If the user is not authenticated</response>
+        [HttpPost]
+        [ProducesResponseType(typeof(CartDto), (int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.Unauthorized)]
+        public async Task<ActionResult<CartDto>> AddToCart([FromBody] AddToCartDto addToCartDto)
         {
-            var cartItems = await _cartService.GetCartItemsByUserIdAsync(userId);
-            return Ok(cartItems);
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var cart = await _cartService.AddToCartAsync(userId, addToCartDto);
+            return Ok(cart);
         }
 
-        [HttpDelete("remove/{id}")]
-        public async Task<IActionResult> RemoveFromCart(int id)
+        /// <summary>
+        /// Update an item in the shopping cart
+        /// </summary>
+        /// <param name="updateCartItemDto">The updated item details</param>
+        /// <returns>The updated cart</returns>
+        /// <response code="200">Returns the updated cart</response>
+        /// <response code="400">If the request is invalid</response>
+        /// <response code="401">If the user is not authenticated</response>
+        [HttpPut("{itemId}")]
+        [ProducesResponseType(typeof(CartDto), (int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.Unauthorized)]
+        public async Task<ActionResult<CartDto>> UpdateCartItem(int itemId, [FromBody] UpdateCartItemDto updateCartItemDto)
         {
-            await _cartService.RemoveCartItemAsync(id);
-            return Ok(new { message = "Item removed from cart." });
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var cart = await _cartService.UpdateCartItemAsync(userId, updateCartItemDto);
+            return Ok(cart);
         }
 
-        [HttpDelete("clear/{userId}")]
-        public async Task<IActionResult> ClearCart(string userId)
+        /// <summary>
+        /// Remove an item from the shopping cart
+        /// </summary>
+        /// <param name="itemId">The ID of the item to remove</param>
+        /// <returns>Success status</returns>
+        /// <response code="200">If the item was removed successfully</response>
+        /// <response code="400">If the request is invalid</response>
+        /// <response code="401">If the user is not authenticated</response>
+        [HttpDelete("{itemId}")]
+        [ProducesResponseType(typeof(bool), (int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.BadRequest)]
+        [ProducesResponseType((int)HttpStatusCode.Unauthorized)]
+        public async Task<ActionResult<bool>> RemoveFromCart(int itemId)
         {
-            await _cartService.ClearCartAsync(userId);
-            return Ok(new { message = "Cart cleared." });
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var result = await _cartService.RemoveFromCartAsync(userId, itemId);
+            return Ok(result);
+        }
+
+        /// <summary>
+        /// Clear all items from the shopping cart
+        /// </summary>
+        /// <returns>Success status</returns>
+        /// <response code="200">If the cart was cleared successfully</response>
+        /// <response code="401">If the user is not authenticated</response>
+        [HttpDelete]
+        [ProducesResponseType(typeof(bool), (int)HttpStatusCode.OK)]
+        [ProducesResponseType((int)HttpStatusCode.Unauthorized)]
+        public async Task<ActionResult<bool>> ClearCart()
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            var result = await _cartService.ClearCartAsync(userId);
+            return Ok(result);
         }
     }
 }

@@ -1,45 +1,86 @@
-﻿using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Core.Interfaces;
+using Bazingo_Core.Entities.Product;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace Bazingo_Application.Services
 {
-    public class ProductService
+    public class ProductService : IProductService
     {
-        private readonly IProductRepository _productRepository;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly ILogger<ProductService> _logger;
 
-        public ProductService(IProductRepository productRepository)
+        public ProductService(IUnitOfWork unitOfWork, ILogger<ProductService> logger)
         {
-            _productRepository = productRepository;
+            _unitOfWork = unitOfWork ?? throw new ArgumentNullException(nameof(unitOfWork));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task<Product> GetProductByIdAsync(int productId)
+        public async Task<ProductEntity> GetProductByIdAsync(int productId)
         {
-            return await _productRepository.GetProductByIdAsync(productId);
+            return await _unitOfWork.Products.GetByIdAsync(productId);
         }
 
-        public async Task<IEnumerable<Product>> GetAllProductsAsync( )
+        public async Task<IEnumerable<ProductEntity>> GetAllProductsAsync()
         {
-            return await _productRepository.GetAllProductsAsync();
+            return await _unitOfWork.Products.GetAllAsync();
         }
 
-        public async Task AddProductAsync(Product product)
+        public async Task<IEnumerable<ProductEntity>> GetProductsByCategoryAsync(int categoryId)
         {
-            await _productRepository.AddProductAsync(product);
+            return await _unitOfWork.Products.GetByCategoryAsync(categoryId);
         }
 
-        public async Task UpdateProductAsync(Product product)
+        public async Task<IEnumerable<ProductEntity>> GetProductsBySellerAsync(string sellerId)
         {
-            await _productRepository.UpdateProductAsync(product);
+            try
+            {
+                return await _unitOfWork.Products.GetBySellerAsync(sellerId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting products for seller {SellerId}", sellerId);
+                throw;
+            }
         }
 
-        public async Task DeleteProductAsync(int productId)
+        public async Task<IEnumerable<ProductEntity>> SearchProductsAsync(string searchTerm)
         {
-            await _productRepository.DeleteProductAsync(productId);
+            try
+            {
+                return await _unitOfWork.Products.SearchAsync(searchTerm, null);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error searching products with term {SearchTerm}", searchTerm);
+                throw;
+            }
+        }
+
+        public async Task<ProductEntity> CreateProductAsync(ProductEntity product)
+        {
+            await _unitOfWork.Products.AddAsync(product);
+            await _unitOfWork.CompleteAsync();
+            return product;
+        }
+
+        public async Task<ProductEntity> UpdateProductAsync(ProductEntity product)
+        {
+            await _unitOfWork.Products.UpdateAsync(product);
+            await _unitOfWork.CompleteAsync();
+            return product;
+        }
+
+        public async Task<bool> DeleteProductAsync(int productId)
+        {
+            var success = await _unitOfWork.Products.DeleteAsync(productId);
+            if (success)
+            {
+                await _unitOfWork.CompleteAsync();
+            }
+            return success;
         }
     }
 }

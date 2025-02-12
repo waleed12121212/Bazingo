@@ -1,35 +1,107 @@
-﻿using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Core.Interfaces;
+using Bazingo_Core.Models.Common;
+using Bazingo_Core.Entities;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
+using System.Linq;
+using Bazingo_Application.Interfaces;
 
 namespace Bazingo_Application.Services
 {
-    public class CurrencyService
+    public class CurrencyService : ICurrencyService
     {
-        private readonly ICurrencyRepository _currencyRepository;
+        private readonly IUnitOfWork _unitOfWork;
+        private readonly ILogger<CurrencyService> _logger;
 
-        public CurrencyService(ICurrencyRepository currencyRepository)
+        public CurrencyService(IUnitOfWork unitOfWork, ILogger<CurrencyService> logger)
         {
-            _currencyRepository = currencyRepository;
+            _unitOfWork = unitOfWork;
+            _logger = logger;
         }
 
-        public async Task<List<Currency>> GetAllCurrenciesAsync( )
+        public async Task<ApiResponse<IReadOnlyList<Currency>>> GetAllCurrenciesAsync()
         {
-            return await _currencyRepository.GetAllAsync();
+            try
+            {
+                var currencies = await _unitOfWork.Currencies.GetAllAsync();
+                return ApiResponse<IReadOnlyList<Currency>>.CreateSuccess(currencies);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting all currencies");
+                return ApiResponse<IReadOnlyList<Currency>>.CreateError("Error retrieving currencies");
+            }
         }
 
-        public async Task<Currency> GetCurrencyByIdAsync(int id)
+        public async Task<ApiResponse<Currency>> GetCurrencyByIdAsync(int id)
         {
-            return await _currencyRepository.GetByIdAsync(id);
+            try
+            {
+                var currency = await _unitOfWork.Currencies.GetByIdAsync(id);
+                if (currency == null)
+                    return ApiResponse<Currency>.CreateError("Currency not found");
+
+                return ApiResponse<Currency>.CreateSuccess(currency);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting currency with ID: {Id}", id);
+                return ApiResponse<Currency>.CreateError("Error retrieving currency");
+            }
         }
 
-        public async Task UpdateCurrencyAsync(Currency currency)
+        public async Task<ApiResponse<Currency>> GetDefaultCurrencyAsync()
         {
-            await _currencyRepository.UpdateAsync(currency);
+            try
+            {
+                var currencies = await _unitOfWork.Currencies.GetAllAsync();
+                var defaultCurrency = currencies.FirstOrDefault(c => c.IsDefault);
+                
+                if (defaultCurrency == null)
+                    return ApiResponse<Currency>.CreateError("No default currency found");
+
+                return ApiResponse<Currency>.CreateSuccess(defaultCurrency);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting default currency");
+                return ApiResponse<Currency>.CreateError("Error retrieving default currency");
+            }
+        }
+
+        public async Task<ApiResponse<Currency>> UpdateCurrencyAsync(Currency currency)
+        {
+            try
+            {
+                var existingCurrency = await _unitOfWork.Currencies.GetByIdAsync(currency.Id);
+                if (existingCurrency == null)
+                    return ApiResponse<Currency>.CreateError("Currency not found");
+
+                // If this currency is being set as default, unset any existing default
+                if (currency.IsDefault && !existingCurrency.IsDefault)
+                {
+                    var currentDefault = (await _unitOfWork.Currencies.GetAllAsync())
+                        .FirstOrDefault(c => c.IsDefault);
+                    
+                    if (currentDefault != null)
+                    {
+                        currentDefault.IsDefault = false;
+                        await _unitOfWork.Currencies.UpdateAsync(currentDefault);
+                    }
+                }
+
+                await _unitOfWork.Currencies.UpdateAsync(currency);
+                await _unitOfWork.CompleteAsync();
+
+                return ApiResponse<Currency>.CreateSuccess(currency, "Currency updated successfully");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error updating currency with ID: {Id}", currency.Id);
+                return ApiResponse<Currency>.CreateError("Error updating currency");
+            }
         }
     }
 }

@@ -1,86 +1,137 @@
-﻿using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using System.Linq;
+using Bazingo_Core.Entities.Auction;
+using Bazingo_Core.Interfaces;
+using Bazingo_Core.Enums;
 
 namespace Bazingo_Core.DomainLogic
 {
-    public class AuctionManager
+    public class AuctionManager : IAuctionManager
     {
+        public class AuctionDetailsDTO
+        {
+            public int Id { get; set; }
+            public int ProductId { get; set; }
+            public string ProductName { get; set; }
+            public string ProductImage { get; set; }
+            public decimal StartingPrice { get; set; }
+            public decimal CurrentPrice { get; set; }
+            public decimal MinimumBidIncrement { get; set; }
+            public DateTime StartTime { get; set; }
+            public DateTime EndTime { get; set; }
+            public AuctionStatus Status { get; set; }
+            public string SellerId { get; set; }
+            public string SellerName { get; set; }
+            public string WinnerName { get; set; }
+            public int BidCount => Bids?.Count ?? 0;
+            public bool HasEnded => DateTime.UtcNow >= EndTime;
+            public List<BidDTO> Bids { get; set; } = new List<BidDTO>();
+        }
+
+        public class BidDTO
+        {
+            public int Id { get; set; }
+            public int AuctionId { get; set; }
+            public string BidderId { get; set; }
+            public string BidderName { get; set; }
+            public decimal Amount { get; set; }
+            public DateTime BidTime { get; set; }
+            public bool IsWinning { get; set; }
+        }
+
         private readonly IAuctionRepository _auctionRepository;
         private readonly IBidRepository _bidRepository;
 
-        public AuctionManager(IAuctionRepository auctionRepository , IBidRepository bidRepository)
+        public AuctionManager(IAuctionRepository auctionRepository, IBidRepository bidRepository)
         {
             _auctionRepository = auctionRepository;
             _bidRepository = bidRepository;
         }
 
-        public async Task<Auction> EndAuctionAsync(int auctionId)
+        public async Task<AuctionDetailsDTO> GetAuctionByIdAsync(int id)
         {
-            var auction = await _auctionRepository.GetAuctionByIdAsync(auctionId);
-
-            if (auction == null || auction.EndTime > DateTime.UtcNow)
-            {
-                throw new InvalidOperationException("Auction is either not found or has not ended yet.");
-            }
-
-            var highestBid = (await _bidRepository.GetBidsByAuctionIdAsync(auctionId))
-                                .OrderByDescending(b => b.BidAmount)
-                                .FirstOrDefault();
-
-            if (highestBid != null)
-            {
-                auction.WinnerID = highestBid.UserID;
-                auction.CurrentPrice = highestBid.BidAmount;
-
-                await _auctionRepository.UpdateAuctionAsync(auction);
-            }
-
-            return auction;
-        }
-        public async Task AddAuctionAsync(Auction auction)
-        {
-            if (auction.EndTime <= DateTime.UtcNow)
-            {
-                throw new ArgumentException("Auction end time must be in the future.");
-            }
-
-            auction.CurrentPrice = auction.StartPrice;
-            await _auctionRepository.AddAuctionAsync(auction);
-        }
-        public async Task PlaceBidAsync(Bid bid)
-        {
-            var auction = await _auctionRepository.GetAuctionByIdAsync(bid.AuctionID);
-
+            var auction = await _auctionRepository.GetAuctionByIdAsync(id);
             if (auction == null)
-            {
-                throw new InvalidOperationException("Auction not found.");
-            }
+                return null;
 
-            if (auction.EndTime <= DateTime.UtcNow)
-            {
-                throw new InvalidOperationException("Auction has already ended.");
-            }
+            var bids = await _bidRepository.GetBidsByAuctionIdAsync(id);
 
-            if (bid.BidAmount <= auction.CurrentPrice)
+            return new AuctionDetailsDTO
             {
-                throw new InvalidOperationException("Bid amount must be higher than the current price.");
-            }
-
-            auction.CurrentPrice = bid.BidAmount;
-            await _bidRepository.AddBidAsync(bid);
-            await _auctionRepository.UpdateAuctionAsync(auction);
+                Id = auction.Id,
+                ProductId = auction.ProductId,
+                StartingPrice = auction.StartingPrice,
+                CurrentPrice = auction.CurrentPrice,
+                StartTime = auction.StartTime,
+                EndTime = auction.EndTime,
+                Status = auction.Status,
+                SellerId = auction.SellerId,
+                MinimumBidIncrement = auction.MinimumBidIncrement,
+                Bids = bids?.Select(b => new BidDTO
+                {
+                    Id = b.Id,
+                    AuctionId = b.AuctionId,
+                    BidderId = b.BidderId,
+                    Amount = b.Amount,
+                    BidTime = b.BidTime,
+                    IsWinning = b.IsWinning
+                }).ToList()
+            };
         }
-        public async Task<Auction> GetAuctionByIdAsync(int auctionId)
+
+        public async Task<AuctionEntity> CreateAuctionAsync(AuctionDetailsDTO auctionDetails)
         {
-            return await _auctionRepository.GetAuctionByIdAsync(auctionId)
-                ?? throw new KeyNotFoundException("Auction not found.");
+            var auction = new AuctionEntity
+            {
+                ProductId = auctionDetails.ProductId,
+                SellerId = auctionDetails.SellerId,
+                StartingPrice = auctionDetails.StartingPrice,
+                MinimumBidIncrement = auctionDetails.MinimumBidIncrement,
+                StartTime = auctionDetails.StartTime,
+                EndTime = auctionDetails.EndTime,
+                Status = AuctionStatus.Active
+            };
+
+            return await _auctionRepository.AddAsync(auction);
         }
 
-    }
+        public async Task<bool> PlaceBidAsync(BidEntity bid)
+        {
+            return await _auctionRepository.PlaceBidAsync(bid);
+        }
 
+        public async Task<bool> EndAuctionAsync(int auctionId)
+        {
+            return await _auctionRepository.EndAuctionAsync(auctionId);
+        }
+
+        public async Task<BidEntity> GetWinningBidAsync(int auctionId)
+        {
+            return await _bidRepository.GetHighestBidForAuctionAsync(auctionId);
+        }
+
+        public async Task<IEnumerable<AuctionEntity>> GetActiveAuctionsAsync()
+        {
+            return await _auctionRepository.GetActiveAuctionsAsync();
+        }
+
+        public async Task<IEnumerable<AuctionEntity>> GetSellerAuctionsAsync(string sellerId)
+        {
+            return await _auctionRepository.GetSellerAuctionsAsync(sellerId);
+        }
+
+        public async Task<IEnumerable<AuctionEntity>> GetBidderAuctionsAsync(string bidderId)
+        {
+            return await _auctionRepository.GetBidderAuctionsAsync(bidderId);
+        }
+
+        public bool ValidateAuction(AuctionEntity auction)
+        {
+            return auction != null
+                && auction.StartingPrice > 0
+                && auction.StartTime < auction.EndTime;
+        }
+    }
 }

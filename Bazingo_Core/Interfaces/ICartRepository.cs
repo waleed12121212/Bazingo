@@ -1,18 +1,19 @@
-﻿using Bazingo_Core.Models;
-using System;
+using Bazingo_Core.Entities.Shopping;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Bazingo_Core.Interfaces
 {
     public interface ICartRepository
     {
-        Task<IEnumerable<ShoppingCartItem>> GetCartItemsByUserIdAsync(string userId);
-        Task AddCartItemAsync(ShoppingCartItem cartItem);
-        Task UpdateCartItemQuantityAsync(int cartItemId , int quantity);
-        Task RemoveCartItemAsync(int cartItemId);
-        Task ClearCartAsync(string userId);
+        Task<CartEntity> GetCartByUserIdAsync(string userId);
+        Task<CartEntity> GetCartWithItemsAsync(string userId);
+        Task<CartEntity> AddAsync(CartEntity cart);
+        Task<CartItemEntity> GetCartItemAsync(int cartItemId);
+        Task<IEnumerable<CartItemEntity>> GetCartItemsAsync(string userId);
+        Task<CartItemEntity> AddCartItemAsync(CartItemEntity cartItem);
+        Task<bool> UpdateCartItemAsync(CartItemEntity cartItem);
+        Task<bool> RemoveCartItemAsync(int cartItemId);
+        Task<bool> ClearCartAsync(string userId);
     }
 }

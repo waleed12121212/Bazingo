@@ -1,56 +1,90 @@
-﻿using Bazingo_Application.DTOs.Carts;
-using Bazingo_Application.Services;
-using Bazingo_Core.Models;
-using Microsoft.AspNetCore.Http;
+using Bazingo_Application.DTOs.Shipping;
+using Bazingo_Application.Interfaces;
+using Bazingo_Core.Models.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Bazingo_Core.Enums;
 
 namespace Bazingo_API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
+    [Authorize]
     public class ShippingController : ControllerBase
     {
-        private readonly OrderService _orderService;
+        private readonly IOrderService _orderService;
+        private readonly ILogger<ShippingController> _logger;
 
-        public ShippingController(OrderService orderService)
+        public ShippingController(IOrderService orderService , ILogger<ShippingController> logger)
         {
             _orderService = orderService;
+            _logger = logger;
         }
 
         [HttpGet("{orderId}")]
-        public async Task<IActionResult> GetShippingDetails(int orderId)
+        public async Task<ActionResult<ApiResponse<ShippingDTO>>> GetShippingDetails(int orderId)
         {
-            var order = await _orderService.GetOrderByIdAsync(orderId);
-            if (order == null) return NotFound();
+            var orderResponse = await _orderService.GetOrderByIdAsync(orderId);
+            if (!orderResponse.Succeeded || orderResponse.Data == null)
+                return NotFound(new ApiResponse<ShippingDTO> { Message = "Order not found" });
 
-            return Ok(new ShippingDTO
+            if (orderResponse.Data.ShippingInfo == null)
+                return NotFound(new ApiResponse<ShippingDTO> { Message = "Shipping information not found for this order" });
+
+            return Ok(new ApiResponse<ShippingDTO>
             {
-                Address = order.Shipping?.Address ,
-                City = order.Shipping?.City ,
-                Country = order.Shipping?.Country ,
-                PostalCode = order.Shipping?.PostalCode ,
-                TrackingNumber = order.Shipping?.TrackingNumber ,
-                ShippingStatus = order.Shipping?.ShippingStatus.ToString() // تحويل ShippingStatus إلى سلسلة نصية
+                Data = orderResponse.Data.ShippingInfo ,
+                Message = "Shipping details retrieved successfully" ,
+                Succeeded = true
             });
         }
 
-        [HttpPut("{orderId}/update-status")]
-        public async Task<IActionResult> UpdateShippingStatus(int orderId , [FromBody] string status)
+        [HttpPut("{orderId}/status")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<ApiResponse<bool>>> UpdateShippingStatus(int orderId , [FromBody] UpdateShippingDto dto)
         {
-            var order = await _orderService.GetOrderByIdAsync(orderId);
-            if (order == null || order.Shipping == null) return NotFound();
-
             try
             {
-                order.Shipping.ShippingStatus = Enum.Parse<ShippingStatus>(status , true); // تحويل النص إلى تعداد
-                await _orderService.UpdateOrderAsync(order);
+                var orderResponse = await _orderService.GetOrderByIdAsync(orderId);
+                if (!orderResponse.Succeeded || orderResponse.Data == null || orderResponse.Data.ShippingInfo == null)
+                    return NotFound(new ApiResponse<bool> { Message = "Order or shipping information not found" });
 
-                return Ok(new { message = "Shipping status updated successfully." });
+                var result = await _orderService.UpdateShippingStatusAsync(orderId , dto.Status.ToString());
+
+                if (!result.Succeeded)
+                    return BadRequest(new ApiResponse<bool> { Message = "Failed to update shipping status" });
+
+                return Ok(new ApiResponse<bool>
+                {
+                    Data = true ,
+                    Message = "Shipping status updated successfully" ,
+                    Succeeded = true
+                });
             }
             catch (ArgumentException)
             {
-                return BadRequest(new { message = "Invalid shipping status value." });
+                return BadRequest(new ApiResponse<bool> { Message = "Invalid shipping status value" });
             }
+        }
+
+        [HttpPut("status")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<ApiResponse<bool>>> UpdateShippingStatus([FromBody] UpdateShippingStatusDto shippingStatusDto)
+        {
+            var result = await _orderService.UpdateShippingStatusAsync(
+                shippingStatusDto.OrderId ,
+                shippingStatusDto.Status
+            );
+
+            if (!result.Succeeded)
+                return BadRequest(new ApiResponse<bool> { Message = "Failed to update shipping status" });
+
+            return Ok(new ApiResponse<bool>
+            {
+                Data = true ,
+                Message = "Shipping status updated successfully" ,
+                Succeeded = true
+            });
         }
     }
 }

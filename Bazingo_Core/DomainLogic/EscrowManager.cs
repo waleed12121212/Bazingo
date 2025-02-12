@@ -1,52 +1,76 @@
-﻿using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Bazingo_Core.Entities.Payment;
 
 namespace Bazingo_Core.DomainLogic
 {
     public class EscrowManager
     {
-        private readonly IEscrowRepository _escrowRepository;
-
-        public EscrowManager(IEscrowRepository escrowRepository)
+        public bool ValidateEscrow(EscrowTransaction escrow)
         {
-            _escrowRepository = escrowRepository;
-        }
-
-        // Create Escrow
-        public async Task CreateEscrowAsync(Escrow escrow)
-        {
-            await _escrowRepository.AddEscrowAsync(escrow);
-        }
-
-        // Get Escrow by ID
-        public async Task<Escrow> GetEscrowByIdAsync(int escrowId)
-        {
-            return await _escrowRepository.GetEscrowByIdAsync(escrowId)
-                   ?? throw new KeyNotFoundException("Escrow not found.");
-        }
-
-        // Update Escrow Status
-        public async Task UpdateEscrowStatusAsync(int escrowId , EscrowStatus status)
-        {
-            var escrow = await _escrowRepository.GetEscrowByIdAsync(escrowId);
             if (escrow == null)
-            {
-                throw new KeyNotFoundException("Escrow not found.");
-            }
+                return false;
 
-            escrow.Status = status;
-            await _escrowRepository.UpdateEscrowAsync(escrow);
+            if (escrow.Amount <= 0)
+                return false;
+
+            if (string.IsNullOrWhiteSpace(escrow.BuyerId) || string.IsNullOrWhiteSpace(escrow.SellerId))
+                return false;
+
+            return true;
         }
 
-        // Get All Escrows
-        public async Task<IEnumerable<Escrow>> GetAllEscrowsAsync( )
+        public async Task<bool> ReleaseEscrow(EscrowTransaction escrow)
         {
-            return await _escrowRepository.GetAllEscrowsAsync();
+            if (!ValidateEscrow(escrow))
+                return false;
+
+            if (escrow.Status != EscrowStatus.Pending)
+                return false;
+
+            // Simulate funds transfer to seller
+            await Task.Delay(100); // Simulating API call
+
+            escrow.Status = EscrowStatus.Released;
+            escrow.ReleasedAt = DateTime.UtcNow;
+            return true;
+        }
+
+        public async Task<bool> RefundEscrow(EscrowTransaction escrow)
+        {
+            if (!ValidateEscrow(escrow))
+                return false;
+
+            if (escrow.Status != EscrowStatus.Pending)
+                return false;
+
+            // Simulate funds return to buyer
+            await Task.Delay(100); // Simulating API call
+
+            escrow.Status = EscrowStatus.Refunded;
+            escrow.RefundedAt = DateTime.UtcNow;
+            return true;
+        }
+
+        public bool CanRelease(EscrowTransaction escrow)
+        {
+            return escrow != null && 
+                   escrow.Status == EscrowStatus.Pending && 
+                   (DateTime.UtcNow - escrow.CreatedAt).TotalDays <= 30;
+        }
+
+        public bool CanRefund(EscrowTransaction escrow)
+        {
+            return escrow != null && 
+                   escrow.Status == EscrowStatus.Pending && 
+                   (DateTime.UtcNow - escrow.CreatedAt).TotalDays <= 30;
+        }
+
+        public bool CanDispute(EscrowTransaction escrow)
+        {
+            return escrow != null && 
+                   escrow.Status == EscrowStatus.Pending && 
+                   (DateTime.UtcNow - escrow.CreatedAt).TotalDays <= 45;
         }
     }
 }

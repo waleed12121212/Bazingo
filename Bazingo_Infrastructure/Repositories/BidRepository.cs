@@ -1,49 +1,87 @@
-﻿using Bazingo.Infrastructure.Data;
+using Bazingo_Core.Entities.Auction;
 using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Bazingo_Infrastructure.Repositories
 {
-    public class BidRepository : IBidRepository
+    public class BidRepository : BaseRepository<BidEntity>, IBidRepository
     {
         private readonly ApplicationDbContext _context;
 
-        public BidRepository(ApplicationDbContext context)
+        public BidRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
         }
 
-        public async Task<Bid> GetBidByIdAsync(int bidId)
+        public async Task<BidEntity> GetBidByIdAsync(int id)
         {
-            return await _context.Bids.FindAsync(bidId);
+            return await _dbSet
+                .Include(b => b.Bidder)
+                .Include(b => b.Auction)
+                .FirstOrDefaultAsync(b => b.Id == id);
         }
 
-        public async Task<IEnumerable<Bid>> GetBidsByAuctionIdAsync(int auctionId)
+        public async Task<IEnumerable<BidEntity>> GetAllBidsAsync()
         {
-            return await _context.Bids.Where(b => b.AuctionID == auctionId).ToListAsync();
+            return await _dbSet
+                .Include(b => b.Bidder)
+                .Include(b => b.Auction)
+                .ToListAsync();
         }
 
-        public async Task AddBidAsync(Bid bid)
+        public async Task<IEnumerable<BidEntity>> GetBidsByAuctionIdAsync(int auctionId)
         {
-            await _context.Bids.AddAsync(bid);
+            return await _dbSet
+                .Include(b => b.Bidder)
+                .Where(b => b.AuctionId == auctionId)
+                .OrderByDescending(b => b.Amount)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<BidEntity>> GetBidsByBidderIdAsync(string bidderId)
+        {
+            return await _dbSet
+                .Include(b => b.Auction)
+                .Where(b => b.BidderId == bidderId)
+                .OrderByDescending(b => b.CreatedAt)
+                .ToListAsync();
+        }
+
+        public async Task<BidEntity> GetHighestBidForAuctionAsync(int auctionId)
+        {
+            return await _dbSet
+                .Include(b => b.Bidder)
+                .Where(b => b.AuctionId == auctionId)
+                .OrderByDescending(b => b.Amount)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<BidEntity> AddBidAsync(BidEntity bid)
+        {
+            await AddAsync(bid);
+            await _context.SaveChangesAsync();
+            return bid;
+        }
+
+        public async Task UpdateBidAsync(BidEntity bid)
+        {
+            await UpdateAsync(bid);
             await _context.SaveChangesAsync();
         }
 
-        public async Task DeleteBidAsync(int bidId)
+        public async Task DeleteBidAsync(int id)
         {
-            var bid = await GetBidByIdAsync(bidId);
+            var bid = await GetBidByIdAsync(id);
             if (bid != null)
             {
-                _context.Bids.Remove(bid);
+                await DeleteAsync(bid);
                 await _context.SaveChangesAsync();
             }
         }
     }
-
 }

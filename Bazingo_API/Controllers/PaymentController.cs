@@ -1,6 +1,9 @@
-﻿using Bazingo_Application.DTOs.Payments;
+using Bazingo_Application.DTOs.Payments;
 using Bazingo_Core.DomainLogic;
 using Bazingo_Core.Models;
+using Bazingo_Core.Entities.Payment;
+using Bazingo_Core.Enums;
+using Bazingo_Core.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,27 +13,24 @@ namespace Bazingo_API.Controllers
     [Route("api/[controller]")]
     public class PaymentController : ControllerBase
     {
+        private readonly IPaymentRepository _paymentRepository;
         private readonly PaymentProcessor _paymentProcessor;
 
-        public PaymentController(PaymentProcessor paymentProcessor)
+        public PaymentController(IPaymentRepository paymentRepository, PaymentProcessor paymentProcessor)
         {
+            _paymentRepository = paymentRepository;
             _paymentProcessor = paymentProcessor;
         }
 
         [HttpPost]
-        public async Task<IActionResult> InitiatePayment([FromBody] PaymentCreateDTO paymentDTO)
+        public async Task<IActionResult> ProcessPayment([FromBody] Payment payment)
         {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            var payment = new Payment
+            var result = await _paymentProcessor.ProcessPayment(payment);
+            if (result)
             {
-                OrderID = paymentDTO.OrderID ,
-                PaymentAmount = paymentDTO.Amount ,
-                PaymentMethod = Enum.Parse<PaymentMethod>(paymentDTO.Method , ignoreCase: true)
-            };
-
-            await _paymentProcessor.ProcessPaymentAsync(payment);
-            return Ok(new { message = "Payment processed successfully." });
+                return Ok(new { message = "Payment processed successfully" });
+            }
+            return BadRequest(new { message = "Payment processing failed" });
         }
     }
 }

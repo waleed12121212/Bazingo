@@ -1,18 +1,18 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using Bazingo_Application.DTOs;
-using Bazingo_Core.Models;
+using Bazingo_Core.Entities.Identity;
 using System.Linq;
-using Bazingo_Application.Services;
+using Bazingo_Application.Interfaces;
 using Bazingo_Application.DTOs.Users;
 
 [ApiController]
 [Route("api/[controller]")]
 public class UserController : ControllerBase
 {
-    private readonly UserService _userService;
+    private readonly IUserApplicationService _userService;
 
-    public UserController(UserService userService)
+    public UserController(IUserApplicationService userService)
     {
         _userService = userService;
     }
@@ -22,23 +22,44 @@ public class UserController : ControllerBase
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        var user = new User
+        // Check if email is unique
+        if (!await _userService.IsEmailUniqueAsync(userRegisterDTO.Email))
         {
-            FirstName = userRegisterDTO.FirstName ,
-            LastName = userRegisterDTO.LastName ,
-            Email = userRegisterDTO.Email
+            return BadRequest(new { message = "Email is already in use." });
+        }
+
+        var user = new ApplicationUser
+        {
+            FirstName = userRegisterDTO.FirstName,
+            LastName = userRegisterDTO.LastName,
+            Email = userRegisterDTO.Email,
+            UserName = userRegisterDTO.Email // Using email as username
         };
 
-        await _userService.AddUserAsync(user);
+        // Since we removed AddUserAsync, we'll use UpdateUserAsync for creation
+        var success = await _userService.UpdateUserAsync(user);
+        if (!success)
+        {
+            return BadRequest(new { message = "Failed to register user." });
+        }
+
         return Ok(new { message = "User registered successfully." });
     }
 
     [HttpPost("login")]
-    public IActionResult Login([FromBody] UserLoginDTO userLoginDTO)
+    public async Task<IActionResult> Login([FromBody] UserLoginDTO userLoginDTO)
     {
         if (!ModelState.IsValid) return BadRequest(ModelState);
 
-        // Implement login logic
+        var user = await _userService.GetUserByEmailAsync(userLoginDTO.Email);
+        if (user == null)
+        {
+            return NotFound(new { message = "User not found." });
+        }
+
+        // Note: In a real application, you would validate the password here
+        // and generate a JWT token for authentication
+
         return Ok(new { message = "User logged in successfully." });
     }
 
@@ -48,35 +69,55 @@ public class UserController : ControllerBase
         var user = await _userService.GetUserByIdAsync(id);
         if (user == null) return NotFound();
 
-        return Ok(new UserProfileDTO
+        var userProfile = new UserProfileDTO
         {
-            FirstName = user.FirstName ,
-            LastName = user.LastName ,
-            Email = user.Email
-        });
+            Id = user.Id,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            Email = user.Email,
+            PhoneNumber = user.PhoneNumber
+        };
+
+        return Ok(userProfile);
     }
 
-    [HttpGet("all")]
-    public async Task<IActionResult> GetAllUsers( )
+    [HttpPut("profile/{id}")]
+    public async Task<IActionResult> UpdateUserProfile(string id, [FromBody] UpdateUserProfileDTO updateProfileDTO)
     {
-        var users = await _userService.GetAllUsersAsync();
-        return Ok(users.Select(u => new UserProfileDTO
-        {
-            FirstName = u.FirstName ,
-            LastName = u.LastName ,
-            Email = u.Email
-        }));
-    }
+        if (!ModelState.IsValid) return BadRequest(ModelState);
 
-    [HttpPut("block/{id}")]
-    public async Task<IActionResult> AdminBlockUser(string id)
-    {
         var user = await _userService.GetUserByIdAsync(id);
         if (user == null) return NotFound();
 
-        user.IsVerified = false;
-        await _userService.UpdateUserAsync(user);
+        // Check if email is being changed and if it's unique
+        if (updateProfileDTO.Email != user.Email && !await _userService.IsEmailUniqueAsync(updateProfileDTO.Email, id))
+        {
+            return BadRequest(new { message = "Email is already in use." });
+        }
 
-        return Ok(new { message = "User blocked successfully." });
+        user.FirstName = updateProfileDTO.FirstName;
+        user.LastName = updateProfileDTO.LastName;
+        user.Email = updateProfileDTO.Email;
+        user.PhoneNumber = updateProfileDTO.PhoneNumber;
+
+        var success = await _userService.UpdateUserAsync(user);
+        if (!success)
+        {
+            return BadRequest(new { message = "Failed to update user profile." });
+        }
+
+        return Ok(new { message = "Profile updated successfully." });
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteUser(string id)
+    {
+        var success = await _userService.DeleteUserAsync(id);
+        if (!success)
+        {
+            return BadRequest(new { message = "Failed to delete user." });
+        }
+
+        return Ok(new { message = "User deleted successfully." });
     }
 }

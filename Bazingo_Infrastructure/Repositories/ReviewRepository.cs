@@ -1,61 +1,164 @@
-﻿using Bazingo.Infrastructure.Data;
+using Bazingo_Core.Entities;
 using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using System.Linq.Expressions;
+using Bazingo_Core.Entities.Product;
 
 namespace Bazingo_Infrastructure.Repositories
 {
-    public class ReviewRepository : IReviewRepository
+    public class ReviewRepository : BaseRepository<ProductReviewEntity>, IProductReviewRepository
     {
         private readonly ApplicationDbContext _context;
+        private readonly DbSet<ProductReviewEntity> _dbSet;
 
-        public ReviewRepository(ApplicationDbContext context)
+        public ReviewRepository(ApplicationDbContext context) : base(context)
         {
             _context = context;
+            _dbSet = context.Set<ProductReviewEntity>();
         }
 
-        public async Task<Review> GetReviewByIdAsync(int reviewId)
+        public new async Task<ProductReviewEntity> GetByIdAsync(int id)
         {
-            return await _context.Reviews.FindAsync(reviewId);
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
         }
 
-        public async Task<IEnumerable<Review>> GetAllReviewsAsync( )
+        public new async Task<IEnumerable<ProductReviewEntity>> GetAllAsync()
         {
-            return await _context.Reviews.ToListAsync();
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => !r.IsDeleted)
+                .OrderByDescending(r => r.ReviewDate)
+                .ToListAsync();
         }
 
-        public async Task<IEnumerable<Review>> GetReviewsByProductIdAsync(int productId)
+        public new async Task<ProductReviewEntity> AddAsync(ProductReviewEntity review)
         {
-            return await _context.Reviews.Where(r => r.ProductID == productId).ToListAsync();
-        }
-
-        public async Task AddReviewAsync(Review review)
-        {
-            await _context.Reviews.AddAsync(review);
+            review.ReviewDate = DateTime.UtcNow;
+            review.CreatedAt = DateTime.UtcNow;
+            await _dbSet.AddAsync(review);
             await _context.SaveChangesAsync();
+            return review;
         }
 
-        public async Task DeleteReviewAsync(int reviewId)
+        public async Task<bool> UpdateAsync(ProductReviewEntity review)
         {
-            var review = await GetReviewByIdAsync(reviewId);
-            if (review != null)
+            try
             {
-                _context.Reviews.Remove(review);
+                review.LastUpdated = DateTime.UtcNow;
+                _context.Entry(review).State = EntityState.Modified;
                 await _context.SaveChangesAsync();
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
-        public async Task<IEnumerable<Review>> GetReviewsByUserIdAsync(string userId)
+        public async Task<bool> DeleteAsync(int id)
         {
-            return await _context.Reviews
-                                 .Where(r => r.UserID == userId)
-                                 .ToListAsync();
+            var review = await GetByIdAsync(id);
+            if (review != null)
+            {
+                review.IsDeleted = true;
+                review.LastUpdated = DateTime.UtcNow;
+                _context.Entry(review).State = EntityState.Modified;
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            return false;
+        }
+
+        public async Task<IEnumerable<ProductReviewEntity>> GetByProductIdAsync(int productId)
+        {
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => r.ProductId == productId && !r.IsDeleted)
+                .OrderByDescending(r => r.ReviewDate)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<ProductReviewEntity>> GetByUserIdAsync(string userId)
+        {
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => r.UserId == userId && !r.IsDeleted)
+                .OrderByDescending(r => r.ReviewDate)
+                .ToListAsync();
+        }
+
+        public async Task<double> GetAverageRatingAsync(int productId)
+        {
+            return await _dbSet
+                .Where(r => r.ProductId == productId && !r.IsDeleted)
+                .AverageAsync(r => r.Rating);
+        }
+
+        public async Task<int> GetReviewCountAsync(int productId)
+        {
+            return await _dbSet
+                .CountAsync(r => r.ProductId == productId && !r.IsDeleted);
+        }
+
+        public async Task<bool> HasUserReviewedAsync(int productId, string userId)
+        {
+            return await _dbSet
+                .AnyAsync(r => r.ProductId == productId && r.UserId == userId && !r.IsDeleted);
+        }
+
+        public async Task<IEnumerable<ProductReviewEntity>> GetRecentReviewsAsync(int count)
+        {
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => !r.IsDeleted)
+                .OrderByDescending(r => r.ReviewDate)
+                .Take(count)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<ProductReviewEntity>> GetTopRatedReviewsAsync(int count)
+        {
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => !r.IsDeleted)
+                .OrderByDescending(r => r.Rating)
+                .Take(count)
+                .ToListAsync();
+        }
+
+        public async Task<IEnumerable<ProductReviewEntity>> GetVerifiedReviewsAsync(int productId)
+        {
+            return await _dbSet
+                .Include(r => r.User)
+                .Include(r => r.Product)
+                .Where(r => r.ProductId == productId && r.IsVerifiedPurchase && !r.IsDeleted)
+                .OrderByDescending(r => r.ReviewDate)
+                .ToListAsync();
+        }
+
+        public async Task<bool> MarkAsVerifiedPurchaseAsync(int reviewId)
+        {
+            var review = await GetByIdAsync(reviewId);
+            if (review != null)
+            {
+                review.IsVerifiedPurchase = true;
+                review.LastUpdated = DateTime.UtcNow;
+                return await UpdateAsync(review);
+            }
+            return false;
         }
     }
-
 }

@@ -1,18 +1,16 @@
-﻿using Bazingo_Core.Models;
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Bazingo_Core.Entities.Auction;
 
 namespace Bazingo_Core.Interfaces
 {
-    public interface IAuctionRepository
+    public interface IAuctionRepository : IBaseRepository<AuctionEntity>
     {
-        Task<Auction> GetAuctionByIdAsync(int auctionId);
-        Task<IEnumerable<Auction>> GetAllAuctionsAsync( );
-        Task AddAuctionAsync(Auction auction);
-        Task UpdateAuctionAsync(Auction auction);
-        Task DeleteAuctionAsync(int auctionId);
+        Task<AuctionEntity> GetAuctionByIdAsync(int id);
+        Task<IEnumerable<AuctionEntity>> GetActiveAuctionsAsync();
+        Task<IEnumerable<AuctionEntity>> GetSellerAuctionsAsync(string sellerId);
+        Task<IEnumerable<AuctionEntity>> GetBidderAuctionsAsync(string bidderId);
+        Task<bool> PlaceBidAsync(BidEntity bid);
+        Task<bool> EndAuctionAsync(int auctionId);
     }
 }

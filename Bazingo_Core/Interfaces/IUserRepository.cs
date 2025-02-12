@@ -1,18 +1,19 @@
-﻿using Bazingo_Core.Models;
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Bazingo_Core.Entities.Identity;
 
 namespace Bazingo_Core.Interfaces
 {
     public interface IUserRepository
     {
-        Task<User> GetUserByIdAsync(string userId);
-        Task<IEnumerable<User>> GetAllUsersAsync( );
-        Task AddUserAsync(User user);
-        Task UpdateUserAsync(User user);
-        Task DeleteUserAsync(string userId);
+        Task<ApplicationUser> GetByIdAsync(string id);
+        Task<ApplicationUser> GetByEmailAsync(string email);
+        Task<ApplicationUser> GetByUsernameAsync(string username);
+        Task<IReadOnlyList<ApplicationUser>> GetAllAsync();
+        Task<bool> IsEmailUniqueAsync(string email, string excludeUserId = null);
+        Task<bool> IsUsernameUniqueAsync(string username, string excludeUserId = null);
+        Task<IReadOnlyList<ApplicationUser>> GetUsersByRoleAsync(string role);
+        Task<bool> UpdateUserAsync(ApplicationUser user);
+        Task<bool> DeleteUserAsync(string userId);
     }
 }

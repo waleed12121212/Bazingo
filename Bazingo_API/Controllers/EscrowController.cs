@@ -1,7 +1,10 @@
-﻿using Bazingo_Application.DTOs.Ecrows;
+using Bazingo_Application.DTOs.Ecrows;
 using Bazingo_Core.Models;
 using Bazingo_Core.DomainLogic;
 using Microsoft.AspNetCore.Mvc;
+using Bazingo_Core.Entities.Payment;
+using Bazingo_Core.Enums;
+using Bazingo_Core.Interfaces;
 
 namespace Bazingo_API.Controllers
 {
@@ -9,10 +12,12 @@ namespace Bazingo_API.Controllers
     [Route("api/[controller]")]
     public class EscrowController : ControllerBase
     {
+        private readonly IEscrowRepository _escrowRepository;
         private readonly EscrowManager _escrowManager;
 
-        public EscrowController(EscrowManager escrowManager)
+        public EscrowController(IEscrowRepository escrowRepository, EscrowManager escrowManager)
         {
+            _escrowRepository = escrowRepository;
             _escrowManager = escrowManager;
         }
 
@@ -22,15 +27,15 @@ namespace Bazingo_API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            var escrow = new Escrow
+            var escrowTransaction = new EscrowTransaction
             {
-                OrderID = escrowCreateDTO.OrderID ,
-                Amount = escrowCreateDTO.Amount ,
-                Status = Enum.Parse<EscrowStatus>(escrowCreateDTO.Status , true) ,
+                OrderId = escrowCreateDTO.OrderID,
+                Amount = escrowCreateDTO.Amount,
+                Status = Enum.Parse<EscrowStatus>(escrowCreateDTO.Status, true),
                 CreatedAt = DateTime.UtcNow
             };
 
-            await _escrowManager.CreateEscrowAsync(escrow);
+            await _escrowRepository.AddEscrowAsync(escrowTransaction);
             return Ok(new { message = "Escrow created successfully." });
         }
 
@@ -38,16 +43,16 @@ namespace Bazingo_API.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetEscrowById(int id)
         {
-            var escrow = await _escrowManager.GetEscrowByIdAsync(id);
-            if (escrow == null) return NotFound(new { message = "Escrow not found." });
+            var escrowTransaction = await _escrowRepository.GetEscrowByIdAsync(id);
+            if (escrowTransaction == null) return NotFound(new { message = "Escrow not found." });
 
             var escrowDTO = new EscrowDTO
             {
-                EscrowID = escrow.EscrowID ,
-                OrderID = escrow.OrderID ,
-                Amount = escrow.Amount ,
-                Status = escrow.Status.ToString() ,
-                CreatedAt = escrow.CreatedAt
+                EscrowID = escrowTransaction.Id,
+                OrderID = escrowTransaction.OrderId,
+                Amount = escrowTransaction.Amount,
+                Status = escrowTransaction.Status.ToString(),
+                CreatedAt = escrowTransaction.CreatedAt
             };
 
             return Ok(escrowDTO);
@@ -55,18 +60,19 @@ namespace Bazingo_API.Controllers
 
         // Update Escrow Status
         [HttpPut("status/{id}")]
-        public async Task<IActionResult> UpdateEscrowStatus(int id , [FromBody] EscrowUpdateDTO escrowUpdateDTO)
+        public async Task<IActionResult> UpdateEscrowStatus(int id, [FromBody] EscrowUpdateDTO escrowUpdateDTO)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             try
             {
-                await _escrowManager.UpdateEscrowStatusAsync(id , Enum.Parse<EscrowStatus>(escrowUpdateDTO.Status , true));
+                var escrowTransaction = await _escrowRepository.GetEscrowByIdAsync(id);
+                if (escrowTransaction == null) return NotFound(new { message = "Escrow not found." });
+
+                escrowTransaction.Status = Enum.Parse<EscrowStatus>(escrowUpdateDTO.Status, true);
+                await _escrowRepository.UpdateEscrowAsync(escrowTransaction);
+
                 return Ok(new { message = "Escrow status updated successfully." });
-            }
-            catch (KeyNotFoundException)
-            {
-                return NotFound(new { message = "Escrow not found." });
             }
             catch (ArgumentException ex)
             {
@@ -76,15 +82,15 @@ namespace Bazingo_API.Controllers
 
         // Get All Escrows
         [HttpGet]
-        public async Task<IActionResult> GetAllEscrows( )
+        public async Task<IActionResult> GetAllEscrows()
         {
-            var escrows = await _escrowManager.GetAllEscrowsAsync();
-            var escrowDTOs = escrows.Select(e => new EscrowDTO
+            var escrowTransactions = await _escrowRepository.GetAllEscrowsAsync();
+            var escrowDTOs = escrowTransactions.Select(e => new EscrowDTO
             {
-                EscrowID = e.EscrowID ,
-                OrderID = e.OrderID ,
-                Amount = e.Amount ,
-                Status = e.Status.ToString() ,
+                EscrowID = e.Id,
+                OrderID = e.OrderId,
+                Amount = e.Amount,
+                Status = e.Status.ToString(),
                 CreatedAt = e.CreatedAt
             });
 

@@ -1,17 +1,18 @@
-﻿using Bazingo_Core.Models;
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Bazingo_Core.Entities.Payment;
+using Bazingo_Core.Enums;
+using PaymentStatus = Bazingo_Core.Entities.Payment.PaymentStatus;
 
 namespace Bazingo_Core.Interfaces
 {
-    public interface IPaymentRepository
+    public interface IPaymentRepository : IBaseRepository<Payment>
     {
-        Task<Payment> GetPaymentByIdAsync(int paymentId);
-        Task<IEnumerable<Payment>> GetAllPaymentsAsync( );
-        Task AddPaymentAsync(Payment payment);
-        Task UpdatePaymentStatusAsync(int paymentId , string status);
+        Task<IReadOnlyList<Payment>> GetPaymentsByOrderAsync(int orderId);
+        Task<IReadOnlyList<Payment>> GetPaymentsByUserAsync(string userId);
+        Task<Payment> GetPaymentByTransactionIdAsync(string transactionId);
+        Task<IReadOnlyList<Payment>> GetPaymentsByStatusAsync(PaymentStatus status);
+        Task<IReadOnlyList<Payment>> GetPaymentsByDateRangeAsync(DateTime startDate, DateTime endDate);
     }
 }

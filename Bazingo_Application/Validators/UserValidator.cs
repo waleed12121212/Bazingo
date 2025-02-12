@@ -1,16 +1,16 @@
-﻿using FluentValidation;
+using FluentValidation;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Bazingo_Core.Models;
+using Bazingo_Core.Entities.Identity;
 
 namespace Bazingo_Application.Validators
 {
-    public class UserValidator : AbstractValidator<User>
+    public class UserValidator : AbstractValidator<ApplicationUser>
     {
-        public UserValidator( )
+        public UserValidator()
         {
             RuleFor(x => x.FirstName)
                 .NotEmpty().WithMessage("First Name is required.")
@@ -20,14 +20,13 @@ namespace Bazingo_Application.Validators
                 .NotEmpty().WithMessage("Last Name is required.")
                 .MaximumLength(50).WithMessage("Last Name cannot exceed 50 characters.");
 
-            RuleFor(x => x.UserType)
-                .IsInEnum().WithMessage("Invalid UserType value.");
+            RuleFor(x => x.Email)
+                .NotEmpty().WithMessage("Email is required.")
+                .EmailAddress().WithMessage("Invalid email format.");
 
-            RuleFor(x => x.PreferredCurrencyID)
-                .GreaterThan(0).WithMessage("PreferredCurrencyID must be valid.");
-
-            RuleFor(x => x.CreatedAt)
-                .NotEmpty().WithMessage("CreatedAt is required.");
+            RuleFor(x => x.PhoneNumber)
+                .NotEmpty().WithMessage("Phone number is required.")
+                .Matches(@"^\+?[1-9]\d{1,14}$").WithMessage("Invalid phone number format.");
         }
     }
 }

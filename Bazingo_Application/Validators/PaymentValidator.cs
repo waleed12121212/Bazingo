@@ -1,31 +1,33 @@
-﻿using Bazingo_Core.Models;
 using FluentValidation;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using Bazingo_Core.Entities.Payment;
+using Bazingo_Core.Enums;
 
 namespace Bazingo_Application.Validators
 {
     public class PaymentValidator : AbstractValidator<Payment>
     {
-        public PaymentValidator( )
+        public PaymentValidator()
         {
-            RuleFor(x => x.OrderID)
-                .NotEmpty().WithMessage("OrderID is required.");
+            RuleFor(x => x.Amount)
+                .GreaterThan(0).WithMessage("Amount must be greater than 0.");
 
-            RuleFor(x => x.PaymentMethod)
-                .IsInEnum().WithMessage("Invalid Payment Method.");
+            RuleFor(x => x.Method)
+                .IsInEnum().WithMessage("Invalid payment method.");
 
-            RuleFor(x => x.PaymentAmount)
-                .GreaterThan(0).WithMessage("PaymentAmount must be greater than 0.");
+            RuleFor(x => x.TransactionId)
+                .NotEmpty().WithMessage("Transaction ID is required.");
+
+            RuleFor(x => x.OrderId)
+                .GreaterThan(0).WithMessage("Order ID must be valid.");
+
+            RuleFor(x => x.UserId)
+                .NotEmpty().WithMessage("User ID is required.");
 
             RuleFor(x => x.Status)
-                .IsInEnum().WithMessage("Invalid Payment Status.");
+                .IsInEnum().WithMessage("Invalid payment status.");
 
-            RuleFor(x => x.CreatedAt)
-                .NotEmpty().WithMessage("CreatedAt is required.");
+            RuleFor(x => x.PaymentDate)
+                .NotEmpty().WithMessage("Payment date is required.");
         }
     }
 }

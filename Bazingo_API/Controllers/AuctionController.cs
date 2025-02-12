@@ -1,19 +1,27 @@
-﻿using Bazingo_Core.DomainLogic;
-using Bazingo_Core.Models;
+using Bazingo_Core.DomainLogic;
+using Bazingo_Core.Entities;
+using Bazingo_Core.Entities.Auction;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Bazingo_Application.DTOs.Auctions;
 using Bazingo_Application.DTOs.Bids;
+using System.Threading.Tasks;
+using System;
+using Microsoft.AspNetCore.Authorization;
+using Bazingo_Core.Interfaces;
+using Bazingo_Core.Enums;
+using static Bazingo_Core.DomainLogic.AuctionManager;
 
 namespace Bazingo_API.Controllers
 {
+    [Authorize]
     [ApiController]
     [Route("api/[controller]")]
     public class AuctionController : ControllerBase
     {
-        private readonly AuctionManager _auctionManager;
+        private readonly IAuctionManager _auctionManager;
 
-        public AuctionController(AuctionManager auctionManager)
+        public AuctionController(IAuctionManager auctionManager)
         {
             _auctionManager = auctionManager;
         }
@@ -23,15 +31,22 @@ namespace Bazingo_API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            var auction = new Auction
+            // Create AuctionManager.AuctionDetailsDTO
+            var auctionDetails = new AuctionManager.AuctionDetailsDTO
             {
-                ProductID = auctionDTO.ProductID ,
-                StartPrice = auctionDTO.StartPrice ,
-                EndTime = auctionDTO.EndTime
+                ProductId = auctionDTO.ProductID ,
+                StartingPrice = auctionDTO.StartPrice ,
+                EndTime = auctionDTO.EndTime ,
+                StartTime = DateTime.UtcNow ,
+                MinimumBidIncrement = 1.0m ,
+                SellerId = User.Identity.Name ,
+                Status = AuctionStatus.Active
             };
 
-            await _auctionManager.AddAuctionAsync(auction);
-            return Ok(new { message = "Auction created successfully." });
+            var result = await _auctionManager.CreateAuctionAsync(auctionDetails);
+            return result != null
+                ? Ok(new { message = "Auction created successfully" , auctionId = result.Id })
+                : BadRequest(new { message = "Failed to create auction" });
         }
 
         [HttpPost("bid")]
@@ -39,21 +54,30 @@ namespace Bazingo_API.Controllers
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            var bid = new Bid
+            var bid = new BidEntity
             {
-                AuctionID = bidDTO.AuctionID ,
-                UserID = bidDTO.UserID ,
-                BidAmount = bidDTO.BidAmount
+                AuctionId = bidDTO.AuctionID ,
+                BidderId = User.Identity.Name ,
+                Amount = bidDTO.BidAmount ,
+                BidTime = DateTime.UtcNow ,
+                IsWinning = false ,
+                CreatedAt = DateTime.UtcNow ,
+                LastUpdated = DateTime.UtcNow ,
+                IsDeleted = false
             };
 
-            await _auctionManager.PlaceBidAsync(bid);
-            return Ok(new { message = "Bid placed successfully." });
+            var result = await _auctionManager.PlaceBidAsync(bid);
+            return result ? Ok(new { message = "Bid placed successfully" }) : BadRequest(new { message = "Failed to place bid" });
         }
 
+        [Authorize]
         [HttpGet("{id}")]
         public async Task<IActionResult> GetAuctionDetails(int id)
         {
             var auction = await _auctionManager.GetAuctionByIdAsync(id);
+            if (auction == null)
+                return NotFound();
+
             return Ok(auction);
         }
     }

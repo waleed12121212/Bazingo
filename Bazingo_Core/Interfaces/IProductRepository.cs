@@ -1,19 +1,23 @@
-﻿using Bazingo_Core.Models;
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
+using Bazingo_Core.Entities.Product;
 
 namespace Bazingo_Core.Interfaces
 {
     public interface IProductRepository
     {
-        Task<Product> GetProductByIdAsync(int productId);
-        Task<IEnumerable<Product>> GetAllProductsAsync( );
-        Task AddProductAsync(Product product);
-        Task UpdateProductAsync(Product product);
-        Task DeleteProductAsync(int productId);
+        Task<ProductEntity> GetByIdAsync(int id);
+        Task<IEnumerable<ProductEntity>> GetAllAsync();
+        Task<IEnumerable<ProductEntity>> GetByCategoryAsync(int categoryId);
+        Task<IEnumerable<ProductEntity>> GetBySellerAsync(string sellerId);
+        Task<ProductEntity> AddAsync(ProductEntity product);
+        Task<bool> UpdateAsync(ProductEntity product);
+        Task<bool> DeleteAsync(int id);
+        Task<IEnumerable<ProductEntity>> SearchAsync(string keyword, int? categoryId = null);
+        Task<bool> UpdateStockAsync(int productId, int quantity);
+        Task<IEnumerable<ProductEntity>> GetFeaturedProductsAsync();
+        Task<IEnumerable<ProductEntity>> GetNewArrivalsAsync();
+        Task<decimal> GetLowestPriceAsync(int productId);
+        Task<decimal> GetHighestPriceAsync(int productId);
     }
-
 }

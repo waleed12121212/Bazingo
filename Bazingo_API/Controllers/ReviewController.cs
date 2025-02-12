@@ -1,7 +1,10 @@
-﻿using Bazingo_Application.DTOs.Reviews;
+using Bazingo_Application.DTOs.Reviews;
 using Bazingo_Core.DomainLogic;
-using Bazingo_Core.Models;
+using Bazingo_Core.Entities.Review;
+using Bazingo_Core.Entities.Product;
+using Bazingo_Core.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Mapster;
 
 namespace Bazingo_API.Controllers
 {
@@ -9,80 +12,75 @@ namespace Bazingo_API.Controllers
     [Route("api/[controller]")]
     public class ReviewController : ControllerBase
     {
+        private readonly IProductReviewRepository _reviewRepository;
         private readonly ReviewManager _reviewManager;
 
-        public ReviewController(ReviewManager reviewManager)
+        public ReviewController(IProductReviewRepository reviewRepository, ReviewManager reviewManager)
         {
+            _reviewRepository = reviewRepository;
             _reviewManager = reviewManager;
         }
 
         // Add Review
         [HttpPost]
-        public async Task<IActionResult> AddReview([FromBody] ReviewCreateDTO reviewCreateDTO)
+        public async Task<IActionResult> AddReview([FromBody] ProductReview review)
         {
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
-            var review = new Review
+            if (!_reviewManager.ValidateReview(review))
+                return BadRequest(new { message = "Invalid review details" });
+
+            var reviewEntity = new ProductReviewEntity
             {
-                ProductID = reviewCreateDTO.ProductID ,
-                UserID = reviewCreateDTO.UserID ,
-                Rating = reviewCreateDTO.Rating ,
-                Comment = reviewCreateDTO.Comment ,
-                CreatedAt = DateTime.UtcNow
+                ProductId = review.ProductId,
+                UserId = review.UserId,
+                Rating = review.Rating,
+                Title = review.Title,
+                Comment = review.Comment,
+                IsVerifiedPurchase = review.IsVerifiedPurchase,
+                CreatedAt = DateTime.UtcNow,
+                LastUpdated = DateTime.UtcNow,
+                IsDeleted = false
             };
 
-            await _reviewManager.AddReviewAsync(review);
-            return Ok(new { message = "Review added successfully." });
+            var result = await _reviewRepository.AddAsync(reviewEntity);
+            return result != null 
+                ? Ok(new { message = "Review added successfully" }) 
+                : BadRequest(new { message = "Failed to add review" });
         }
 
         // Get Reviews by Product ID
         [HttpGet("product/{productId}")]
-        public async Task<IActionResult> GetProductReviews(int productId)
+        public async Task<IActionResult> GetReviewsByProductId(int productId)
         {
-            var reviews = await _reviewManager.GetReviewsByProductIdAsync(productId);
+            var reviews = await _reviewRepository.GetByProductIdAsync(productId);
             if (!reviews.Any()) return NotFound(new { message = "No reviews found for this product." });
 
-            var reviewDTOs = reviews.Select(r => new ReviewDTO
-            {
-                ReviewID = r.ReviewID ,
-                ProductID = r.ProductID ,
-                UserID = r.UserID ,
-                Rating = r.Rating ,
-                Comment = r.Comment ,
-                CreatedAt = r.CreatedAt
-            });
-
-            return Ok(reviewDTOs);
+            var reviewDtos = reviews.Adapt<List<ProductReview>>();
+            return Ok(reviewDtos);
         }
 
         // Get Reviews by User ID
         [HttpGet("user/{userId}")]
-        public async Task<IActionResult> GetUserReviews(string userId)
+        public async Task<IActionResult> GetReviewsByUserId(string userId)
         {
-            var reviews = await _reviewManager.GetReviewsByUserIdAsync(userId);
+            var reviews = await _reviewRepository.GetByUserIdAsync(userId);
             if (!reviews.Any()) return NotFound(new { message = "No reviews found for this user." });
 
-            var reviewDTOs = reviews.Select(r => new ReviewDTO
-            {
-                ReviewID = r.ReviewID ,
-                ProductID = r.ProductID ,
-                UserID = r.UserID ,
-                Rating = r.Rating ,
-                Comment = r.Comment ,
-                CreatedAt = r.CreatedAt
-            });
-
-            return Ok(reviewDTOs);
+            var reviewDtos = reviews.Adapt<List<ProductReview>>();
+            return Ok(reviewDtos);
         }
 
         // Delete Review
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteReview(int id)
+        [HttpDelete("{reviewId}")]
+        public async Task<IActionResult> DeleteReview(int reviewId)
         {
             try
             {
-                await _reviewManager.DeleteReviewAsync(id);
-                return Ok(new { message = "Review deleted successfully." });
+                var result = await _reviewRepository.DeleteAsync(reviewId);
+                return result 
+                    ? Ok(new { message = "Review deleted successfully" }) 
+                    : BadRequest(new { message = "Failed to delete review" });
             }
             catch (KeyNotFoundException)
             {

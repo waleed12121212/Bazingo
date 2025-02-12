@@ -1,52 +1,80 @@
-﻿using Bazingo.Infrastructure.Data;
+using Bazingo_Core.Entities;
 using Bazingo_Core.Interfaces;
-using Bazingo_Core.Models;
+using Bazingo_Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 
 namespace Bazingo_Infrastructure.Repositories
 {
-    public class CurrencyRepository : ICurrencyRepository
+    public class CurrencyRepository : BaseRepository<Currency>, ICurrencyRepository
     {
-        private readonly ApplicationDbContext _context;
-
-        public CurrencyRepository(ApplicationDbContext context)
+        public CurrencyRepository(ApplicationDbContext context) : base(context)
         {
-            _context = context;
         }
 
-        public async Task<List<Currency>> GetAllAsync( )
+        public async Task<List<Currency>> GetAllAsync()
         {
-            return await _context.Currencies.ToListAsync();
+            return await _dbSet
+                .Include(c => c.PriceHistories)
+                .Where(c => !c.IsDeleted && c.IsActive)
+                .OrderBy(c => c.Code)
+                .ToListAsync();
         }
 
         public async Task<Currency> GetByIdAsync(int id)
         {
-            return await _context.Currencies.FindAsync(id);
+            return await _dbSet
+                .Include(c => c.PriceHistories)
+                .FirstOrDefaultAsync(c => c.Id == id && !c.IsDeleted);
+        }
+
+        public async Task<Currency> GetByCodeAsync(string code)
+        {
+            return await _dbSet
+                .Include(c => c.PriceHistories)
+                .FirstOrDefaultAsync(c => c.Code == code && !c.IsDeleted && c.IsActive);
+        }
+
+        public async Task<decimal> GetExchangeRateAsync(string fromCode, string toCode)
+        {
+            var fromCurrency = await GetByCodeAsync(fromCode);
+            var toCurrency = await GetByCodeAsync(toCode);
+
+            if (fromCurrency == null || toCurrency == null)
+                throw new ArgumentException("One or both currencies not found");
+
+            if (!fromCurrency.IsActive || !toCurrency.IsActive)
+                throw new InvalidOperationException("One or both currencies are inactive");
+
+            // Convert through base rate (assuming USD is base)
+            return toCurrency.ExchangeRate / fromCurrency.ExchangeRate;
         }
 
         public async Task AddAsync(Currency currency)
         {
-            await _context.Currencies.AddAsync(currency);
+            currency.LastUpdated = DateTime.UtcNow;
+            await base.AddAsync(currency);
             await _context.SaveChangesAsync();
         }
 
         public async Task UpdateAsync(Currency currency)
         {
-            _context.Currencies.Update(currency);
+            currency.LastUpdated = DateTime.UtcNow;
+            await base.UpdateAsync(currency);
             await _context.SaveChangesAsync();
         }
 
         public async Task DeleteAsync(int id)
         {
-            var currency = await _context.Currencies.FindAsync(id);
+            var currency = await GetByIdAsync(id);
             if (currency != null)
             {
-                _context.Currencies.Remove(currency);
+                currency.IsDeleted = true;
+                currency.IsActive = false;
+                currency.LastUpdated = DateTime.UtcNow;
                 await _context.SaveChangesAsync();
             }
         }

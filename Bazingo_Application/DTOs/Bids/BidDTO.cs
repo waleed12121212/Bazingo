@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,10 +8,12 @@ namespace Bazingo_Application.DTOs.Bids
 {
     public class BidDTO
     {
-        public int BidID { get; set; }
-        public int AuctionID { get; set; }
-        public string UserID { get; set; }
-        public decimal BidAmount { get; set; }
-        public DateTime CreatedAt { get; set; }
+        public int Id { get; set; }
+        public int AuctionId { get; set; }
+        public string BidderId { get; set; }
+        public string BidderName { get; set; }
+        public decimal Amount { get; set; }
+        public DateTime BidTime { get; set; }
+        public bool IsWinning { get; set; }
     }
 }

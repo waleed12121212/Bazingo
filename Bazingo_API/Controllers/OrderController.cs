@@ -1,53 +1,89 @@
-﻿using Bazingo_Application.Services;
-using Bazingo_Core.Models;
-using Microsoft.AspNetCore.Http;
+using Bazingo_Application.DTOs.Order;
+using Bazingo_Application.Interfaces;
+using Bazingo_Core.Models.Common;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Bazingo_Application.DTOs.Orders;
+using Bazingo_Core.Enums;
+using System.Security.Claims;
 
 namespace Bazingo_API.Controllers
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class OrderController : ControllerBase
+    [Authorize]
+    public class OrderController : BaseController
     {
-        private readonly OrderService _orderService;
+        private readonly IOrderService _orderService;
+        private readonly ILogger<OrderController> _logger;
 
-        public OrderController(OrderService orderService)
+        public OrderController(IOrderService orderService, ILogger<OrderController> logger)
         {
             _orderService = orderService;
-        }
-
-        [HttpPost]
-        public async Task<IActionResult> CreateOrder([FromBody] OrderCreateDTO orderCreateDTO)
-        {
-            if (!ModelState.IsValid) return BadRequest(ModelState);
-
-            var order = new Order
-            {
-                BuyerID = orderCreateDTO.BuyerID ,
-                Status = Enum.Parse<OrderStatus>("Pending" , true) // تحويل النص إلى enum
-            };
-
-            await _orderService.AddOrderAsync(order);
-            return Ok(new { message = "Order created successfully." });
+            _logger = logger;
         }
 
         [HttpGet("{id}")]
-        public async Task<IActionResult> GetOrderById(int id)
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<OrderDto>>> GetOrder(int id)
         {
-            var order = await _orderService.GetOrderByIdAsync(id);
-            if (order == null) return NotFound();
-
-            return Ok(order);
+            var result = await _orderService.GetOrderByIdAsync(id);
+            return Ok(result);
         }
 
-        [HttpGet("user/{userId}")]
-        public async Task<IActionResult> GetUserOrders(string userId)
+        [HttpGet("user")]
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<IEnumerable<OrderDto>>>> GetUserOrders()
         {
-            var orders = await _orderService.GetAllOrdersAsync();
-            var userOrders = orders.Where(o => o.BuyerID == userId);
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var result = await _orderService.GetOrdersByUserIdAsync(userId);
+            return Ok(result);
+        }
 
-            return Ok(userOrders);
+        [HttpGet("seller")]
+        [Authorize(Roles = "Seller")]
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<IEnumerable<OrderDto>>>> GetSellerOrders()
+        {
+            var sellerId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var result = await _orderService.GetOrdersBySellerIdAsync(sellerId);
+            return Ok(result);
+        }
+
+        [HttpGet("status/{status}")]
+        [Authorize(Roles = "Admin,Seller")]
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<IEnumerable<OrderDto>>>> GetOrdersByStatus(OrderStatus status)
+        {
+            var result = await _orderService.GetOrdersByStatusAsync(status);
+            return Ok(result);
+        }
+
+        [HttpPost]
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<OrderDto>>> CreateOrder([FromBody] CreateOrderDto dto)
+        {
+            var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var result = await _orderService.CreateOrderAsync(dto, userId);
+            return Ok(result);
+        }
+
+        [HttpPut]
+        [Authorize(Roles = "Admin,Seller")]
+        public async Task<IActionResult> UpdateOrderStatus([FromBody] UpdateOrderStatusDto updateOrderStatusDto)
+        {
+            var result = await _orderService.UpdateOrderStatusAsync(updateOrderStatusDto);
+            return result != null 
+                ? Ok(new { message = "Order status updated successfully" }) 
+                : BadRequest(new { message = "Failed to update order status" });
+        }
+
+        [HttpPut("{id}/payment")]
+        [Authorize(Roles = "Admin")]
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<OrderDto>>> UpdatePaymentStatus(int id, [FromBody] string status)
+        {
+            var paymentStatus = Enum.Parse<PaymentStatus>(status);
+            var result = await _orderService.UpdatePaymentStatusAsync(id, paymentStatus);
+            return Ok(result);
+        }
+
+        [HttpPost("{id}/cancel")]
+        public async Task<ActionResult<Bazingo_Core.Models.Common.ApiResponse<bool>>> CancelOrder(int id, [FromBody] string reason)
+        {
+            var result = await _orderService.CancelOrderAsync(id, reason);
+            return Ok(result);
         }
     }
 }
